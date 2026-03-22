@@ -44,6 +44,9 @@ def parse_offset_table(data, offset):
     return result
 
 
+FALSE_COLOR_HEADER_SIZE = 796  # 5*4 + 2*4 + 768
+TRUE_COLOR_HEADER_SIZE = 20    # 5*4
+
 MEASUREMENT_CONDITIONS_MIN_SIZE = 304
 
 def parse_measurement_conditions(data, offset):
@@ -75,3 +78,60 @@ def parse_measurement_conditions(data, offset):
         "y_length_per_pixel_pm": y_length_per_pixel,
         "z_length_per_digit_pm": z_length_per_digit,
     }
+
+
+def parse_false_color_image(data, offset, allow_missing=False):
+    # type: (bytes, int, bool) -> Any
+    if offset == 0 and allow_missing:
+        return None
+    if len(data) < offset + FALSE_COLOR_HEADER_SIZE:
+        raise ValueError(
+            "VK4 file truncated: false-color image header at offset %d" % offset
+        )
+    width, height, bit_depth, compression, byte_size = struct.unpack_from(
+        "<5I", data, offset
+    )
+    if bit_depth not in (8, 16, 32):
+        raise ValueError("VK4 false-color image: unsupported bit depth %d" % bit_depth)
+    palette_range_min, palette_range_max = struct.unpack_from("<2I", data, offset + 20)
+    pixel_offset = offset + FALSE_COLOR_HEADER_SIZE
+    expected_size = width * height * (bit_depth // 8)
+    if byte_size != expected_size:
+        raise ValueError(
+            "VK4 false-color image: byte_size %d != expected %d"
+            % (byte_size, expected_size)
+        )
+    if len(data) < pixel_offset + byte_size:
+        raise ValueError(
+            "VK4 file truncated: false-color pixel data at offset %d" % pixel_offset
+        )
+    raw_data = data[pixel_offset:pixel_offset + byte_size]
+    return width, height, bit_depth, raw_data
+
+
+def parse_true_color_image(data, offset, allow_missing=False):
+    # type: (bytes, int, bool) -> Any
+    if offset == 0 and allow_missing:
+        return None
+    if len(data) < offset + TRUE_COLOR_HEADER_SIZE:
+        raise ValueError(
+            "VK4 file truncated: true-color image header at offset %d" % offset
+        )
+    width, height, bit_depth, compression, byte_size = struct.unpack_from(
+        "<5I", data, offset
+    )
+    if bit_depth != 24:
+        raise ValueError("VK4 true-color image: expected bit depth 24, got %d" % bit_depth)
+    pixel_offset = offset + TRUE_COLOR_HEADER_SIZE
+    expected_size = width * height * 3
+    if byte_size != expected_size:
+        raise ValueError(
+            "VK4 true-color image: byte_size %d != expected %d"
+            % (byte_size, expected_size)
+        )
+    if len(data) < pixel_offset + byte_size:
+        raise ValueError(
+            "VK4 file truncated: true-color pixel data at offset %d" % pixel_offset
+        )
+    raw_data = data[pixel_offset:pixel_offset + byte_size]
+    return width, height, raw_data

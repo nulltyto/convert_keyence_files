@@ -1,7 +1,11 @@
+import math
 import struct
 import pytest
 from convert_keyence_files.parsers.vk4 import parse_vk4_header, parse_offset_table
 from convert_keyence_files.parsers.vk4 import parse_measurement_conditions
+from convert_keyence_files.parsers.vk4 import (
+    parse_false_color_image, parse_true_color_image
+)
 
 def make_vk4_header(file_type=0):
     """Build a minimal VK4 header (12 bytes)."""
@@ -60,3 +64,46 @@ def test_parse_measurement_conditions_truncated():
     data = bytes(100)
     with pytest.raises(ValueError, match="truncated"):
         parse_measurement_conditions(data, 0)
+
+
+def make_false_color_image(width, height, bit_depth, pixel_data):
+    palette = b"\x00" * 768
+    byte_size = len(pixel_data)
+    header = struct.pack("<5I", width, height, bit_depth, 0, byte_size)
+    range_fields = struct.pack("<2I", 0, 0)
+    return header + range_fields + palette + pixel_data
+
+def make_true_color_image(width, height, pixel_data):
+    byte_size = len(pixel_data)
+    header = struct.pack("<5I", width, height, 24, 0, byte_size)
+    return header + pixel_data
+
+def test_parse_false_color_image_height():
+    pixels = struct.pack("<4I", 1000, 2000, 0xFFFFFFFF, 3000)
+    data = make_false_color_image(2, 2, 32, pixels)
+    width, height, bit_depth, raw_data = parse_false_color_image(data, 0)
+    assert width == 2
+    assert height == 2
+    assert bit_depth == 32
+    assert len(raw_data) == 16
+
+def test_parse_false_color_image_laser():
+    pixels = struct.pack("<4H", 100, 200, 300, 400)
+    data = make_false_color_image(2, 2, 16, pixels)
+    width, height, bit_depth, raw_data = parse_false_color_image(data, 0)
+    assert width == 2
+    assert height == 2
+    assert bit_depth == 16
+    assert len(raw_data) == 8
+
+def test_parse_true_color_image():
+    pixels = bytes([255, 0, 0, 0, 255, 0, 0, 0, 255, 128, 128, 128])
+    data = make_true_color_image(2, 2, pixels)
+    width, height, raw_data = parse_true_color_image(data, 0)
+    assert width == 2
+    assert height == 2
+    assert len(raw_data) == 12
+
+def test_parse_false_color_image_zero_offset():
+    result = parse_false_color_image(b"", 0, allow_missing=True)
+    assert result is None
