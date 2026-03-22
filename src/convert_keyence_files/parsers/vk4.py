@@ -42,3 +42,36 @@ def parse_offset_table(data, offset):
     result["light"] = [result.pop("light_0"), result.pop("light_1"), result.pop("light_2")]
     result["height"] = [result.pop("height_0"), result.pop("height_1"), result.pop("height_2")]
     return result
+
+
+MEASUREMENT_CONDITIONS_MIN_SIZE = 304
+
+def parse_measurement_conditions(data, offset):
+    # type: (bytes, int) -> Dict[str, Any]
+    if len(data) < offset + MEASUREMENT_CONDITIONS_MIN_SIZE:
+        raise ValueError(
+            "VK4 file truncated: measurement conditions block too short "
+            "(expected at least %d bytes at offset %d, got %d)"
+            % (MEASUREMENT_CONDITIONS_MIN_SIZE, offset, len(data) - offset)
+        )
+    size = struct.unpack_from("<I", data, offset)[0]
+    if size < MEASUREMENT_CONDITIONS_MIN_SIZE:
+        raise ValueError(
+            "VK4 measurement conditions: invalid size field %d" % size
+        )
+    year, month, day, hour, minute, second, diff_utc = struct.unpack_from(
+        "<7I", data, offset + 4
+    )
+    lens_mag = struct.unpack_from("<I", data, offset + 96)[0]
+    x_length_per_pixel, y_length_per_pixel, z_length_per_digit = struct.unpack_from(
+        "<3I", data, offset + 148
+    )
+    return {
+        "year": year, "month": month, "day": day,
+        "hour": hour, "minute": minute, "second": second,
+        "diff_utc_by_minutes": diff_utc,
+        "magnification": lens_mag / 10.0,
+        "x_length_per_pixel_pm": x_length_per_pixel,
+        "y_length_per_pixel_pm": y_length_per_pixel,
+        "z_length_per_digit_pm": z_length_per_digit,
+    }
