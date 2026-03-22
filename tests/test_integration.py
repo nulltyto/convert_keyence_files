@@ -33,3 +33,28 @@ def test_read_real_vk7():
     print("Optical: %s" % ("present" if kf.optical else "absent"))
     print("Laser: %s" % ("present" if kf.laser else "absent"))
     print("Metadata: %s" % kf.metadata)
+
+
+def test_cli_real_vk7(tmp_path):
+    """Test full CLI conversion with the real sample file."""
+    from convert_keyence_files.cli import main
+    import sys
+
+    out = tmp_path / "output"
+    out.mkdir()
+
+    sys.argv = ["convert-keyence", SAMPLE_VK7, "-o", str(out)]
+    main()
+
+    csv_files = list(out.glob("*_height.csv"))
+    assert len(csv_files) == 1, "Expected one height CSV, found: %s" % list(out.iterdir())
+
+    with open(str(csv_files[0])) as f:
+        lines = f.readlines()
+    assert len(lines) > 0, "Height CSV is empty"
+    vals = lines[0].strip().split(",")
+    assert len(vals) > 0
+
+    png_files = list(out.glob("*.png"))
+    print("Output files: %s" % [f.name for f in out.iterdir()])
+    print("CSV rows: %d, cols: %d" % (len(lines), len(vals)))
