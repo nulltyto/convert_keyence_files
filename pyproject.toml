@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "convert-keyence-files"
+version = "0.1.0"
+description = "Convert Keyence .vk4/.vk6/.vk7 microscope files to PNG, TIFF, and CSV"
+license = "Unlicense"
+requires-python = ">=3.8"
+dependencies = [
+    "Pillow",
+]
+
+[project.scripts]
+convert-keyence = "convert_keyence_files.cli:main"
