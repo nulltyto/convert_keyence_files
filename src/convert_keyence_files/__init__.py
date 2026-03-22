@@ -1,4 +1,5 @@
 from convert_keyence_files.models import KeyenceFile
+from convert_keyence_files.reader import read_file as read
 
 __all__ = [
     "KeyenceFile",
@@ -7,10 +8,6 @@ __all__ = [
     "export_optical",
     "export_laser",
 ]
-
-
-def read(path):
-    raise NotImplementedError
 
 
 def export_height_csv(kf, path):
