@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import math
 import struct
 from typing import Any, Dict, List, Tuple
+
+from convert_keyence_files.models import KeyenceFile
 
 VK4_MAGIC = b"VK4_"
 HEADER_SIZE = 12
@@ -135,3 +138,124 @@ def parse_true_color_image(data, offset, allow_missing=False):
         )
     raw_data = data[pixel_offset:pixel_offset + byte_size]
     return width, height, raw_data
+
+
+INVALID_HEIGHT = 0xFFFFFFFF
+
+
+def parse_string_data(data, offset):
+    # type: (bytes, int) -> Tuple[str, str]
+    pos = offset
+    if len(data) < pos + 4:
+        raise ValueError("VK4 file truncated: string data at offset %d" % pos)
+    title_len = struct.unpack_from("<I", data, pos)[0]
+    pos += 4
+    if title_len == 0:
+        title = ""
+    else:
+        byte_len = title_len * 2
+        if len(data) < pos + byte_len:
+            raise ValueError("VK4 file truncated: title string data")
+        title = data[pos:pos + byte_len].decode("utf-16-le")
+        pos += byte_len
+    if len(data) < pos + 4:
+        raise ValueError("VK4 file truncated: lens name string data")
+    lens_len = struct.unpack_from("<I", data, pos)[0]
+    pos += 4
+    if lens_len == 0:
+        lens_name = ""
+    else:
+        byte_len = lens_len * 2
+        if len(data) < pos + byte_len:
+            raise ValueError("VK4 file truncated: lens name string data")
+        lens_name = data[pos:pos + byte_len].decode("utf-16-le")
+        pos += byte_len
+    return title, lens_name
+
+
+def parse_vk4(data, source_format="vk4"):
+    # type: (bytes, str) -> KeyenceFile
+    parse_vk4_header(data, 0)
+    offsets = parse_offset_table(data, HEADER_SIZE)
+    metadata = {}  # type: Dict[str, Any]
+    if offsets["setting"] != 0:
+        metadata = parse_measurement_conditions(data, offsets["setting"])
+    height_offset = offsets["height"][0]
+    height = None  # type: Any
+    if height_offset != 0:
+        result = parse_false_color_image(data, height_offset)
+        if result is not None:
+            w, h, bit_depth, raw = result
+            z_per_digit = metadata.get("z_length_per_digit_pm", 1)
+            height = _convert_height(raw, w, h, z_per_digit)
+    if height is None:
+        raise ValueError("VK4 file has no height data")
+    optical = None  # type: Any
+    optical_offset = offsets["color_light"]
+    if optical_offset != 0:
+        result = parse_true_color_image(data, optical_offset)
+        if result is not None:
+            w, h, raw = result
+            optical = _convert_optical(raw, w, h)
+    laser = None  # type: Any
+    laser_offset = offsets["light"][0]
+    if laser_offset != 0:
+        result = parse_false_color_image(data, laser_offset)
+        if result is not None:
+            w, h, bit_depth, raw = result
+            laser = _convert_laser(raw, w, h, bit_depth)
+    string_offset = offsets["string_data"]
+    if string_offset != 0:
+        title, lens_name = parse_string_data(data, string_offset)
+        metadata["title"] = title
+        metadata["lens_name"] = lens_name
+    return KeyenceFile(
+        height=height, optical=optical, laser=laser,
+        metadata=metadata, source_format=source_format,
+    )
+
+
+def _convert_height(raw, width, height, z_length_per_digit_pm):
+    # type: (bytes, int, int, int) -> List[List[float]]
+    scale = z_length_per_digit_pm * 1e-6
+    nan = float("nan")
+    result = []
+    for row in range(height):
+        row_data = []
+        for col in range(width):
+            idx = (row * width + col) * 4
+            val = struct.unpack_from("<I", raw, idx)[0]
+            if val == INVALID_HEIGHT:
+                row_data.append(nan)
+            else:
+                row_data.append(val * scale)
+        result.append(row_data)
+    return result
+
+
+def _convert_optical(raw, width, height):
+    # type: (bytes, int, int) -> List[List[Tuple[int, int, int]]]
+    result = []
+    for row in range(height):
+        row_data = []
+        for col in range(width):
+            idx = (row * width + col) * 3
+            b, g, r = raw[idx], raw[idx + 1], raw[idx + 2]
+            row_data.append((r, g, b))
+        result.append(row_data)
+    return result
+
+
+def _convert_laser(raw, width, height, bit_depth):
+    # type: (bytes, int, int, int) -> List[List[int]]
+    bps = bit_depth // 8
+    fmt = "<H" if bit_depth == 16 else "<B" if bit_depth == 8 else "<I"
+    result = []
+    for row in range(height):
+        row_data = []
+        for col in range(width):
+            idx = (row * width + col) * bps
+            val = struct.unpack_from(fmt, raw, idx)[0]
+            row_data.append(val)
+        result.append(row_data)
+    return result
